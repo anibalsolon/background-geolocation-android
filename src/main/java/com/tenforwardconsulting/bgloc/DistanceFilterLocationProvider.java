@@ -21,20 +21,54 @@ import android.location.Criteria;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.PowerManager;
+import android.util.Log;
+import android.widget.Toast;
 
+import com.github.jparkie.promise.Promise;
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
 import com.marianhello.bgloc.Config;
+import com.marianhello.bgloc.PluginDelegate;
+import com.marianhello.bgloc.PluginException;
+import com.marianhello.bgloc.data.BackgroundActivity;
+import com.marianhello.bgloc.data.BackgroundLocation;
 import com.marianhello.bgloc.provider.AbstractLocationProvider;
 import com.marianhello.utils.ToneGenerator.Tone;
 
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.Callable;
+import java.util.concurrent.TimeoutException;
 
+import static com.google.android.gms.location.LocationServices.getFusedLocationProviderClient;
 import static java.lang.Math.abs;
 import static java.lang.Math.pow;
 import static java.lang.Math.round;
 
 
-public class DistanceFilterLocationProvider extends AbstractLocationProvider implements LocationListener {
+public class DistanceFilterLocationProvider extends AbstractLocationProvider implements LocationListener, PluginDelegate {
+
+    int locationIndex = 0;
+    private LocationCallback mLocationCallback;
+    private FusedLocationProviderClient mFusedLocationProviderClient;
+    public static boolean isServiceRunning = false;
+    private LocationRequest mLocationRequest = new LocationRequest();
+
+    ArrayList<Location> arrLocations;
+
+
 
     private static final String TAG = DistanceFilterLocationProvider.class.getSimpleName();
     private static final String P_NAME = "com.tenforwardconsulting.cordova.bgloc";
@@ -116,8 +150,8 @@ public class DistanceFilterLocationProvider extends AbstractLocationProvider imp
 
         logger.info("Start recording");
         scaledDistanceFilter = mConfig.getDistanceFilter();
-        isStarted = true;
         setPace(false);
+        isStarted = true;
     }
 
     @Override
@@ -127,6 +161,10 @@ public class DistanceFilterLocationProvider extends AbstractLocationProvider imp
         }
 
         try {
+        // Stop fused location provider
+            mFusedLocationProviderClient.removeLocationUpdates(mLocationCallback);
+
+
             locationManager.removeUpdates(this);
             locationManager.removeProximityAlert(stationaryRegionPI);
         } catch (SecurityException e) {
@@ -164,50 +202,9 @@ public class DistanceFilterLocationProvider extends AbstractLocationProvider imp
      * @param value set true to engage "aggressive", battery-consuming tracking, false for stationary-region tracking
      */
     private void setPace(Boolean value) {
-        if (!isStarted) {
-            return;
-        }
-
-        logger.info("Setting pace: {}", value);
-
-        Boolean wasMoving   = isMoving;
-        isMoving            = value;
-        isAcquiringStationaryLocation = false;
-        isAcquiringSpeed    = false;
-        stationaryLocation  = null;
-
-        try {
-            locationManager.removeUpdates(this);
-            criteria.setAccuracy(Criteria.ACCURACY_FINE);
-            criteria.setHorizontalAccuracy(translateDesiredAccuracy(mConfig.getDesiredAccuracy()));
-            criteria.setPowerRequirement(Criteria.POWER_HIGH);
-
-            if (isMoving) {
-                // setPace can be called while moving, after distanceFilter has been recalculated.  We don't want to re-acquire velocity in this case.
-                if (!wasMoving) {
-                    isAcquiringSpeed = true;
-                }
-            } else {
-                isAcquiringStationaryLocation = true;
-            }
-
-            // Temporarily turn on super-aggressive geolocation on all providers when acquiring velocity or stationary location.
-            if (isAcquiringSpeed || isAcquiringStationaryLocation) {
-                locationAcquisitionAttempts = 0;
-                // Turn on each provider aggressively for a short period of time
-                List<String> matchingProviders = locationManager.getAllProviders();
-                for (String provider: matchingProviders) {
-                    if (provider != LocationManager.PASSIVE_PROVIDER) {
-                        locationManager.requestLocationUpdates(provider, 0, 0, this);
-                    }
-                }
-            } else {
-                locationManager.requestLocationUpdates(locationManager.getBestProvider(criteria, true), mConfig.getInterval(), scaledDistanceFilter, this);
-            }
-        } catch (SecurityException e) {
-            logger.error("Security exception: {}", e.getMessage());
-            this.handleSecurityException(e);
-        }
+        // New implementation
+        if(!isStarted)
+            config();
     }
 
     /**
@@ -281,14 +278,14 @@ public class DistanceFilterLocationProvider extends AbstractLocationProvider imp
     }
 
     public void onLocationChanged(Location location) {
-        logger.debug("Location change: {} isMoving={}", location.toString(), isMoving);
+       // logger.debug("Location change: {} isMoving={}", location.toString(), isMoving);
 
         if (!isMoving && !isAcquiringStationaryLocation && stationaryLocation==null) {
             // Perhaps our GPS signal was interupted, re-acquire a stationaryLocation now.
             setPace(false);
         }
 
-        showDebugToast( "mv:" + isMoving + ",acy:" + location.getAccuracy() + ",v:" + location.getSpeed() + ",df:" + scaledDistanceFilter);
+        showDebugToast( "mv:" + isMoving + ",accuracy:" + location.getAccuracy() + ",v:" + location.getSpeed() + ",df:" + scaledDistanceFilter);
 
         if (isAcquiringStationaryLocation) {
             if (stationaryLocation == null || stationaryLocation.getAccuracy() > location.getAccuracy()) {
@@ -539,7 +536,7 @@ public class DistanceFilterLocationProvider extends AbstractLocationProvider imp
         this.onStop();
         alarmManager.cancel(stationaryAlarmPI);
         alarmManager.cancel(stationaryLocationPollingPI);
-
+        isServiceRunning = false;
         unregisterReceiver(stationaryAlarmReceiver);
         unregisterReceiver(singleUpdateReceiver);
         unregisterReceiver(stationaryRegionReceiver);
@@ -547,4 +544,152 @@ public class DistanceFilterLocationProvider extends AbstractLocationProvider imp
 
         super.onDestroy();
     }
+
+
+    public Location getCurrentLocation(int timeout, long maximumAge, boolean enableHighAccuracy) throws PluginException {
+       // logger.info("Getting current location with timeout:{} maximumAge:{} enableHighAccuracy:{}", timeout, maximumAge, enableHighAccuracy);
+
+        com.marianhello.bgloc.LocationManager locationManager = com.marianhello.bgloc.LocationManager.getInstance(mContext);
+        Promise<Location> promise = locationManager.getCurrentLocation(timeout, maximumAge, enableHighAccuracy);
+        try {
+            promise.await();
+            Location location = promise.get();
+
+            if (location != null) {
+                return location;
+            }
+
+            Throwable error = promise.getError();
+            if (error == null) {
+                throw new PluginException("Location not available", 2); // LOCATION_UNAVAILABLE
+            }
+            if (error instanceof com.marianhello.bgloc.LocationManager.PermissionDeniedException) {
+                logger.warn("Getting current location failed due missing permissions");
+                throw new PluginException("Permission denied", 1); // PERMISSION_DENIED
+            }
+            if (error instanceof TimeoutException) {
+                throw new PluginException("Location request timed out", 3); // TIME_OUT
+            }
+
+            throw new PluginException(error.getMessage(), 2); // LOCATION_UNAVAILABLE
+        } catch (InterruptedException e) {
+            logger.error("Interrupted while waiting location", e);
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting location", e);
+        }
+    }
+
+
+    @Override
+    public void onAuthorizationChanged(int authStatus) {
+
+    }
+
+    @Override
+    public void onLocationChanged(BackgroundLocation location) {
+
+    }
+
+    @Override
+    public void onStationaryChanged(BackgroundLocation location) {
+
+    }
+
+    @Override
+    public void onActivityChanged(BackgroundActivity activity) {
+
+    }
+
+    @Override
+    public void onServiceStatusChanged(int status) {
+
+    }
+
+    @Override
+    public void onAbortRequested() {
+
+    }
+
+    @Override
+    public void onHttpAuthorization() {
+
+    }
+
+    @Override
+    public void onError(PluginException error) {
+
+    }
+
+
+    private void config() {
+        isServiceRunning = true;
+            mLocationRequest = new LocationRequest();
+            mLocationRequest.setInterval(300000); // get gps location every 5 mins == 300000 milliseconds
+            mLocationRequest.setFastestInterval(300000);
+            mLocationRequest.setSmallestDisplacement(0);
+            mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+            locationManager = (android.location.LocationManager) mContext.getSystemService(Context.LOCATION_SERVICE);
+            startLocationUpdates();
+    }
+
+
+    private void startLocationUpdates() {
+        arrLocations = new ArrayList<Location>();
+        mLocationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(final LocationResult locationResult) {
+
+                new Handler(Looper.getMainLooper()).post(new Runnable() {
+                    @Override
+                    public void run() {
+                        getLastKnownLocation();
+                    }});
+            }
+        };
+
+        mFusedLocationProviderClient = getFusedLocationProviderClient(mContext);
+        mFusedLocationProviderClient.requestLocationUpdates(mLocationRequest, mLocationCallback, Looper.getMainLooper()  /*Looper*/);
+
+    }
+
+    void getLastKnownLocation() {
+
+        AsyncTask.execute(new Runnable() {
+            @Override
+            public void run() {
+
+                locationIndex++;
+
+                try {
+                    int timeout = 30000;
+                    long maximumAge = 300000;
+                    boolean enableHighAccuracy = true;
+
+                    final Location location = getCurrentLocation(timeout, maximumAge, enableHighAccuracy);
+
+                    if(location.getAccuracy() < 15) {
+                        handleLocation(location);
+                        return;
+                    }
+
+                    if(locationIndex >= 5) {
+                        locationIndex = 0;
+                        handleLocation(location);
+                    } else {
+                        new Timer().schedule(new TimerTask() {
+                            @Override
+                            public void run() {
+                                getLastKnownLocation();
+                            }
+                        }, 3000);
+                    }
+                } catch (PluginException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+    }
 }
+
+
+

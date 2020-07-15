@@ -19,6 +19,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class LocationManager {
+    private static final float MIN_ACCURACY_IN_METERS = 20.0f;
+
     private Context mContext;
     private static LocationManager mLocationManager;
 
@@ -31,7 +33,8 @@ public class LocationManager {
         mContext = context;
     }
 
-    public class PermissionDeniedException extends Exception {}
+    public class PermissionDeniedException extends Exception {
+    }
 
     public static LocationManager getInstance(Context context) {
         if (mLocationManager == null) {
@@ -82,12 +85,12 @@ public class LocationManager {
         final android.location.LocationManager locationManager = (android.location.LocationManager) mContext.getSystemService(Context.LOCATION_SERVICE);
 
         Location lastKnownGPSLocation = locationManager.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER);
-        if (lastKnownGPSLocation != null && lastKnownGPSLocation.getTime() >= minLocationTime) {
+        if (lastKnownGPSLocation != null && lastKnownGPSLocation.getTime() >= minLocationTime && lastKnownGPSLocation.getAccuracy() < MIN_ACCURACY_IN_METERS) {
             return lastKnownGPSLocation;
         }
 
         Location lastKnownNetworkLocation = locationManager.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER);
-        if (lastKnownNetworkLocation != null && lastKnownNetworkLocation.getTime() >= minLocationTime) {
+        if (lastKnownNetworkLocation != null && lastKnownNetworkLocation.getTime() >= minLocationTime && lastKnownNetworkLocation.getAccuracy() < MIN_ACCURACY_IN_METERS) {
             return lastKnownNetworkLocation;
         }
 
@@ -95,7 +98,8 @@ public class LocationManager {
         criteria.setAccuracy(enableHighAccuracy ? Criteria.ACCURACY_FINE : Criteria.ACCURACY_COARSE);
 
         CurrentLocationListener locationListener = new CurrentLocationListener();
-        locationManager.requestSingleUpdate(criteria, locationListener, Looper.getMainLooper());
+        locationManager.requestLocationUpdates(1000, 0, criteria, locationListener, Looper.getMainLooper());
+//        locationManager.requestSingleUpdate(criteria, locationListener, Looper.getMainLooper());
 
         if (!locationListener.mCountDownLatch.await(timeout, TimeUnit.MILLISECONDS)) {
             locationManager.removeUpdates(locationListener);
@@ -110,13 +114,29 @@ public class LocationManager {
     }
 
     static class CurrentLocationListener implements LocationListener {
+        private static final int MAX_ATTEMPTS = 5;
+
         Location mLocation = null;
         final CountDownLatch mCountDownLatch = new CountDownLatch(1);
+        private int currentAttempts = 0;
+        private Location bestLocation;
+
 
         @Override
         public void onLocationChanged(Location location) {
-            mLocation = location;
-            mCountDownLatch.countDown();
+            if (location.getAccuracy() < MIN_ACCURACY_IN_METERS) {
+                mLocation = location;
+                mCountDownLatch.countDown();
+            } else {
+                if (bestLocation == null || location.getAccuracy() < bestLocation.getAccuracy()) {
+                    bestLocation = location;
+                }
+                currentAttempts = currentAttempts + 1;
+                if (currentAttempts >= MAX_ATTEMPTS) {
+                    mLocation = bestLocation;
+                    mCountDownLatch.countDown();
+                }
+            }
         }
 
         @Override
