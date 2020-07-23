@@ -85,25 +85,29 @@ public class NotificationHelper {
         }
     }
 
-    public static void registerAllChannels(Context context) {
+   public static void registerAllChannels(Context context) {
+        // Create the NotificationChannel, but only on API 26+ because
+        // the NotificationChannel class is new and not in the support library
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            String appName = ResourceResolver.newInstance(context).getString(("app_name"));
-            // Create the NotificationChannel, but only on API 26+ because
-            // the NotificationChannel class is new and not in the support library
+            String backgroundServiceChannelName = ResourceResolver.newInstance(context).getString(("background_service_notification_channel_name"));
             android.app.NotificationManager notificationManager = (android.app.NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-            notificationManager.createNotificationChannel(createServiceChannel(appName));
-            notificationManager.createNotificationChannel(createSyncChannel());
-            notificationManager.createNotificationChannel(createAndroidPermissionsChannel(appName));
+            notificationManager.createNotificationChannel(createServiceChannel(backgroundServiceChannelName));
+            // comment out these lines as the main app is not using sync service and permissions channel
+            // TODO: consider dynamically register this notification channel based on config
+            // notificationManager.createNotificationChannel(createSyncChannel());
+
+            // String permissionChannelName = ResourceResolver.newInstance(context).getString(("android_permission_notification_channel_name"));
+            // notificationManager.createNotificationChannel(createAndroidPermissionsChannel(permissionChannelName));
         }
     }
 
     public static void registerServiceChannel(Context context) {
+        // Create the NotificationChannel, but only on API 26+ because
+        // the NotificationChannel class is new and not in the support library
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            String appName = ResourceResolver.newInstance(context).getString(("app_name"));
-            // Create the NotificationChannel, but only on API 26+ because
-            // the NotificationChannel class is new and not in the support library
+            String backgroundServiceChannelName = ResourceResolver.newInstance(context).getString(("background_service_notification_channel_name"));
             android.app.NotificationManager notificationManager = (android.app.NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-            notificationManager.createNotificationChannel(createServiceChannel(appName));
+            notificationManager.createNotificationChannel(createServiceChannel(backgroundServiceChannelName));
         }
     }
 
@@ -120,6 +124,7 @@ public class NotificationHelper {
     public static NotificationChannel createServiceChannel(CharSequence name) {
         NotificationChannel channel = new NotificationChannel(SERVICE_CHANNEL_ID, name, android.app.NotificationManager.IMPORTANCE_LOW);
         channel.enableVibration(false);
+        channel.setShowBadge(false); // avoid badge count due to background service notification
         return channel;
     }
 
