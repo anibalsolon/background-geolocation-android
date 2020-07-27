@@ -33,6 +33,10 @@ public class ResourceResolver {
         return getAppResource(resourceName, "drawable");
     }
 
+    public Integer getMipMap(String resourceName) {
+        return getAppResource(resourceName, "mipmap");
+    }
+
     public String getString(String name) {
         return getApplicationContext().getString(getAppResource(name, "string"));
     }

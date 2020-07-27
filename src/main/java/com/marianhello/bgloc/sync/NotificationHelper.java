@@ -57,12 +57,12 @@ public class NotificationHelper {
             builder.setContentTitle(title);
             builder.setContentText(text);
             if (smallIcon != null && !smallIcon.isEmpty()) {
-                builder.setSmallIcon(mResolver.getDrawable(smallIcon));
+                builder.setSmallIcon(mResolver.getMipMap(smallIcon));
             } else {
                 builder.setSmallIcon(android.R.drawable.ic_menu_mylocation);
             }
             if (largeIcon != null && !largeIcon.isEmpty()) {
-                builder.setLargeIcon(BitmapFactory.decodeResource(appContext.getResources(), mResolver.getDrawable(largeIcon)));
+                builder.setLargeIcon(BitmapFactory.decodeResource(appContext.getResources(), mResolver.getMipMap(largeIcon)));
             }
             if (color != null && !color.isEmpty()) {
                 builder.setColor(this.parseNotificationIconColor(color));
