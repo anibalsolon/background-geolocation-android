@@ -403,18 +403,18 @@ public class LocationServiceImpl extends Service implements ProviderDelegate, Lo
     public void startForeground() {
         if (sIsRunning && !mIsInForeground) {
             Config config = getConfig();
-            Notification notification = new NotificationHelper.NotificationFactory(this).getNotification(
-                    config.getNotificationTitle(),
-                    config.getNotificationText(),
-                    config.getLargeNotificationIcon(),
-                    config.getSmallNotificationIcon(),
-                    config.getNotificationIconColor());
+            // Notification notification = new NotificationHelper.NotificationFactory(this).getNotification(
+            //         config.getNotificationTitle(),
+            //         config.getNotificationText(),
+            //         config.getLargeNotificationIcon(),
+            //         config.getSmallNotificationIcon(),
+            //         config.getNotificationIconColor());
 
-            if (mProvider != null) {
-                mProvider.onCommand(LocationProvider.CMD_SWITCH_MODE,
-                        LocationProvider.FOREGROUND_MODE);
-            }
-            super.startForeground(NOTIFICATION_ID, notification);
+            // if (mProvider != null) {
+            //     mProvider.onCommand(LocationProvider.CMD_SWITCH_MODE,
+            //             LocationProvider.FOREGROUND_MODE);
+            // }
+            // super.startForeground(NOTIFICATION_ID, notification);
             mIsInForeground = true;
         }
     }
@@ -457,15 +457,15 @@ public class LocationServiceImpl extends Service implements ProviderDelegate, Lo
                             startForeground();
                         } else {
                             // was running in foreground, so just update existing notification
-                            Notification notification = new NotificationHelper.NotificationFactory(LocationServiceImpl.this).getNotification(
-                                    mConfig.getNotificationTitle(),
-                                    mConfig.getNotificationText(),
-                                    mConfig.getLargeNotificationIcon(),
-                                    mConfig.getSmallNotificationIcon(),
-                                    mConfig.getNotificationIconColor());
+                            // Notification notification = new NotificationHelper.NotificationFactory(LocationServiceImpl.this).getNotification(
+                            //         mConfig.getNotificationTitle(),
+                            //         mConfig.getNotificationText(),
+                            //         mConfig.getLargeNotificationIcon(),
+                            //         mConfig.getSmallNotificationIcon(),
+                            //         mConfig.getNotificationIconColor());
 
-                            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                            notificationManager.notify(NOTIFICATION_ID, notification);
+                            // NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                            // notificationManager.notify(NOTIFICATION_ID, notification);
                         }
                     }
                 }
